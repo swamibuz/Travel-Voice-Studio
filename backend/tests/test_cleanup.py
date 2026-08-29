@@ -11,6 +11,16 @@ def test_apply_travel_glossary_corrects_known_terms() -> None:
     assert "Herzegovina" in corrected
 
 
+def test_apply_travel_glossary_corrects_medium_model_variants() -> None:
+    text = "Sarojiava and Sarojia had Republika Sperska references, parda, head scars, and Argygovina."
+    corrected = apply_travel_glossary(text)
+    assert corrected.count("Sarajevo") == 2
+    assert "Republika Srpska" in corrected
+    assert "purdah" in corrected
+    assert "headscarves" in corrected
+    assert "Herzegovina" in corrected
+
+
 def test_clean_transcript_preserves_raw_meaning_with_glossary() -> None:
     cleaned = clean_transcript("Sarojiya was then in Yogaslava.")
     assert cleaned.startswith("Cleaned English Transcript")
