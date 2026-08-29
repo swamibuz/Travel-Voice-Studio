@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from .glossary import apply_travel_glossary
+
 
 def clean_transcript(raw_text: str) -> str:
-    body = raw_text.strip()
+    body = apply_travel_glossary(raw_text.strip())
     return (
         "Cleaned English Transcript\n\n"
         "The following text preserves the speaker's meaning and first-person travel voice while "
-        "improving readability, punctuation, and paragraphing.\n\n"
+        "improving readability, punctuation, paragraphing, and known travel terms.\n\n"
         f"{body}"
     )
 
