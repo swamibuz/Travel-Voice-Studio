@@ -2,14 +2,40 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..config import TRANSCRIPTION_LANGUAGE_HINT, TRANSCRIPTION_PROMPT_HINT, TRANSCRIPTION_PROVIDER
+from ..config import TRANSCRIPTION_LANGUAGE_HINT, TRANSCRIPTION_PROMPT_HINT, TRANSCRIPTION_PROVIDER, WHISPER_MODEL
 
 
 def transcribe_audio(audio_path: str, original_name: str, metadata: dict[str, object]) -> str:
     provider = TRANSCRIPTION_PROVIDER.lower().strip()
-    if provider != "demo":
-        return demo_transcript(audio_path, original_name, metadata, provider)
+    if provider in {"faster-whisper", "whisper-local", "local"}:
+        return faster_whisper_transcript(audio_path)
     return demo_transcript(audio_path, original_name, metadata, provider)
+
+
+def faster_whisper_transcript(audio_path: str) -> str:
+    try:
+        from faster_whisper import WhisperModel
+    except ImportError as exc:
+        raise RuntimeError("Install faster-whisper or set TRANSCRIPTION_PROVIDER=demo") from exc
+
+    language = "en" if TRANSCRIPTION_LANGUAGE_HINT.lower().startswith("en") else None
+    model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")
+    segments, info = model.transcribe(
+        audio_path,
+        language=language,
+        beam_size=5,
+        vad_filter=True,
+        initial_prompt=TRANSCRIPTION_PROMPT_HINT,
+    )
+    lines = [
+        f"[Transcribed with faster-whisper model '{WHISPER_MODEL}'. Detected language: {info.language}.]",
+        "",
+    ]
+    for segment in segments:
+        text = segment.text.strip()
+        if text:
+            lines.append(text)
+    return "\n".join(lines).strip()
 
 
 def demo_transcript(audio_path: str, original_name: str, metadata: dict[str, object], provider: str) -> str:

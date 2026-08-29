@@ -39,6 +39,7 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=change-this-password
 
 TRANSCRIPTION_PROVIDER=openai
+WHISPER_MODEL=small
 TRANSCRIPTION_LANGUAGE_HINT=en-IN
 TRANSCRIPTION_PROMPT_HINT=Indian English speaker. Preserve names, places, Indian English phrasing, and book-specific terminology.
 
@@ -146,6 +147,7 @@ Set:
 
 ```bash
 TRANSCRIPTION_PROVIDER=faster-whisper
+WHISPER_MODEL=small
 TRANSCRIPTION_LANGUAGE_HINT=en
 ```
 
