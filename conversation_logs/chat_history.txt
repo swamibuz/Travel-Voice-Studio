@@ -6,3 +6,4 @@
 2026-08-29 - Started next step for quality improvement: running medium Whisper model and adding a cleaned-transcript travel glossary so Raw Transcript stays untouched while cleaned/blog/chapter drafts correct likely travel names such as Sarajevo, Franz Ferdinand, Yugoslavia, Republika Srpska, and Herzegovina.
 2026-09-03 - User asked to run the site. Started the FastAPI backend on `http://127.0.0.1:8765` and the Vite frontend on `http://127.0.0.1:5175/`, then opened the frontend login screen in the browser.
 2026-09-03 - User asked to commit and push the code to `https://github.com/swamibuz/Travel-Voice-Studio.git`.
+2026-09-03 - User reported Vercel deployment failed with `vite: command not found`. Added root `vercel.json`, made the frontend API base configurable with `VITE_API_BASE_URL`, documented Vercel deployment steps, and validated the frontend production build.

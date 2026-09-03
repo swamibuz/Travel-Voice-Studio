@@ -31,7 +31,7 @@ type Section = {
   location?: string;
 };
 
-const apiBase = '/api';
+const apiBase = (import.meta.env.VITE_API_BASE_URL ?? '/api').replace(/\/$/, '');
 
 function App() {
   const [token, setToken] = React.useState(localStorage.getItem('bookwriting-token') ?? '');

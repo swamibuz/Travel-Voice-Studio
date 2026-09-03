@@ -32,6 +32,23 @@ Local test login:
 admin / admin123
 ```
 
+## Deploy Frontend to Vercel
+
+This repository keeps the Vite app in `frontend/`, so the root `vercel.json` tells Vercel to install and build from that folder:
+
+```text
+npm ci --prefix frontend
+npm --prefix frontend run build
+```
+
+Vercel publishes `frontend/dist`.
+
+For local development, the frontend calls `/api` and Vite proxies requests to the backend on `127.0.0.1:8765`. For a deployed Vercel frontend, set this environment variable to the deployed backend URL:
+
+```text
+VITE_API_BASE_URL=https://your-backend.example.com
+```
+
 ## Current Workflow
 
 1. Log in.
