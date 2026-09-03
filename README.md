@@ -1,6 +1,6 @@
-# BookWriting Travel Studio
+# Travel Voice Studio
 
-BookWriting Travel Studio is a local-first web application for turning travel voice notes into raw transcripts, cleaned transcripts, blog drafts, chapter drafts, summaries, and printable manuscript output.
+Travel Voice Studio is a local-first web application for turning travel voice notes into raw transcripts, cleaned transcripts, blog drafts, chapter drafts, summaries, and printable manuscript output.
 
 The current implementation supports an end-to-end demo workflow with the sample MP3 in `SampleVoice/`. Because no live speech-to-text credentials or local Whisper tooling are configured yet, the backend uses `TRANSCRIPTION_PROVIDER=demo` by default so the full app can be tested immediately.
 
