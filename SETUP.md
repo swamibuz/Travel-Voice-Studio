@@ -33,27 +33,17 @@ Create a `.env` file in the backend folder when the application skeleton exists.
 ```bash
 APP_ENV=local
 APP_SECRET_KEY=change-this-local-secret
-DATABASE_URL=sqlite+aiosqlite:///./bookwriting.db
 
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=change-this-password
 
-TRANSCRIPTION_PROVIDER=openai
+TRANSCRIPTION_PROVIDER=faster-whisper
 WHISPER_MODEL=small
 TRANSCRIPTION_LANGUAGE_HINT=en-IN
 TRANSCRIPTION_PROMPT_HINT=Indian English speaker. Preserve names, places, Indian English phrasing, and book-specific terminology.
-
-OPENAI_API_KEY=
-
-AZURE_SPEECH_KEY=
-AZURE_SPEECH_REGION=
-
-OUTPUT_DIR=../voiceoutput
-UPLOAD_WORK_DIR=./data/uploads
-RETENTION_DAYS=30
 ```
 
-Use only the variables required by the selected provider.
+There is no database and no server-side file storage — uploads are transcribed in a temp file per request and the results are returned directly to the browser, which holds all state for the session.
 
 ## 4. Backend Setup
 
@@ -165,26 +155,24 @@ Expected result:
 
 - A raw transcript is created.
 - A cleaned English transcript is created.
-- A combined transcript is created for the run.
+- A blog draft and chapter draft are created.
 - A summary can be generated.
-- Output artifacts are saved under `voiceoutput/<timestamp>/`.
+- Export returns downloadable files directly to the browser (nothing is written to disk on the server).
 
 ## 8. Output Files
 
-Each processing run should create a timestamped folder similar to:
+Export produces these files, downloaded straight to the browser:
 
 ```text
-voiceoutput/2026-08-29_18-40-00/
-  metadata.json
-  raw_transcript.md
-  cleaned_transcript.md
-  combined_transcript.md
-  summary.md
-  printable.html
-  output.pdf
+metadata.json
+raw_transcript.md
+cleaned_transcript.md
+blog_drafts.md
+chapter_drafts.md
+printable.html
 ```
 
-The exact timestamp should be generated at runtime.
+Download them before closing the tab — the app does not keep a copy after the response is sent.
 
 ## 9. Local Development Checks
 

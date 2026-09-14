@@ -25,6 +25,10 @@ def faster_whisper_transcript(audio_path: str) -> str:
         language=language,
         beam_size=5,
         vad_filter=True,
+        vad_parameters={"min_silence_duration_ms": 500},
+        # Prevents the decoder from anchoring on earlier (possibly low-quality) text
+        # and prematurely giving up partway through longer recordings.
+        condition_on_previous_text=False,
         initial_prompt=TRANSCRIPTION_PROMPT_HINT,
     )
     lines = [

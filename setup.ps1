@@ -27,13 +27,13 @@ if (-not $python) { Write-Error "Python not found. Install Python 3.11+ and retr
 Write-Host "    Python dependencies installed." -ForegroundColor Green
 
 # --- Pre-download Whisper model ---
-Write-Host "[3/4] Pre-downloading Whisper model (tiny, ~75 MB)..." -ForegroundColor Cyan
+Write-Host "[3/4] Pre-downloading Whisper model (small, ~250 MB)..." -ForegroundColor Cyan
 & $python -c @"
 import os, warnings
 warnings.filterwarnings('ignore')
 from faster_whisper import WhisperModel
-WhisperModel('tiny', device='cpu', compute_type='int8')
-print('    Whisper tiny model ready.')
+WhisperModel('small', device='cpu', compute_type='int8')
+print('    Whisper small model ready.')
 "@
 
 # --- Node deps ---
