@@ -1,20 +1,19 @@
 from __future__ import annotations
 
 import hmac
-import tempfile
+import re
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from .auth import create_session_token, verify_session_token
-from .cleanup.service import clean_transcript, create_blog_draft, create_chapter_draft
-from .config import ADMIN_PASSWORD, ADMIN_USERNAME, APP_SECRET_KEY, SESSION_TTL_SECONDS
-from .export.service import build_markdown, build_metadata_json, build_printable_html
-from .models import ExportRequest, InferMetadataRequest, LoginRequest, SummaryRequest
-from .summary.service import summarize_sections
-from .transcription.provider import transcribe_audio
-from .travel import display_location, infer_metadata
+from . import repository
+from .auth import create_session_token, verify_password, verify_session_token
+from .config import APP_SECRET_KEY, SESSION_TTL_SECONDS
+from .files import read_transcript, save_audio, save_transcript
+from .models import LoginRequest
+from .transcription.format import format_transcript
+from .transcription.provider import transcribe_audio_segments
 
 app = FastAPI(title="BookWriting Travel Voice API")
 app.add_middleware(
@@ -31,6 +30,11 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+def on_startup() -> None:
+    repository.init()
+
+
 def require_user(authorization: str = Header(default="")) -> dict[str, object]:
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing bearer token")
@@ -41,6 +45,12 @@ def require_user(authorization: str = Header(default="")) -> dict[str, object]:
     return session
 
 
+def recording_title(filename: str) -> str:
+    stem = Path(filename).stem
+    cleaned = re.sub(r"[_-]+", " ", stem)
+    return re.sub(r"\s+", " ", cleaned).strip() or "Voice Recording"
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "healthy"}
@@ -48,12 +58,11 @@ def health() -> dict[str, str]:
 
 @app.post("/auth/login")
 def login(request: LoginRequest) -> dict[str, object]:
-    # Static credentials from .env — no database, works on stateless deployments (e.g. Vercel).
-    valid = hmac.compare_digest(request.username, ADMIN_USERNAME) and hmac.compare_digest(request.password, ADMIN_PASSWORD)
-    if not valid:
+    user = repository.get_user_by_username(request.username)
+    if not user or not verify_password(request.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid username or password")
-    token = create_session_token(ADMIN_USERNAME, "admin", APP_SECRET_KEY, SESSION_TTL_SECONDS)
-    return {"token": token, "user": {"username": ADMIN_USERNAME, "role": "admin"}}
+    token = create_session_token(user["username"], "user", APP_SECRET_KEY, SESSION_TTL_SECONDS)
+    return {"token": token, "user": {"username": user["username"]}}
 
 
 @app.post("/auth/logout")
@@ -62,77 +71,85 @@ def logout(authorization: str = Header(default="")) -> dict[str, str]:
     return {"status": "logged_out"}
 
 
-@app.post("/metadata/infer")
-def infer_metadata_batch(request: InferMetadataRequest, user: dict[str, object] = Depends(require_user)) -> dict[str, object]:
-    items = [{"filename": item.filename, **infer_metadata(item.filename, item.order_index)} for item in request.files]
-    return {"items": items}
+def _recording_summary(row: dict[str, object]) -> dict[str, object]:
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "recorded_at": row["recorded_at"],
+        "status": row["status"],
+        "error": row["error"],
+    }
 
 
-@app.post("/transcribe")
-async def transcribe(
+@app.get("/recordings")
+def get_recordings(user: dict[str, object] = Depends(require_user)) -> dict[str, object]:
+    user_row = repository.get_user_by_username(str(user["username"]))
+    if not user_row:
+        raise HTTPException(status_code=401, detail="Unknown user")
+    rows = repository.list_recordings(int(user_row["id"]))
+    return {"items": [_recording_summary(row) for row in rows]}
+
+
+@app.post("/recordings")
+async def upload_recording(
     file: UploadFile = File(...),
     original_name: str = Form(""),
-    country: str = Form(""),
-    city: str = Form(""),
-    place_name: str = Form(""),
-    visit_date: str = Form(""),
-    blog_title: str = Form(""),
-    chapter_title: str = Form(""),
+    recorded_at: str = Form(""),
     user: dict[str, object] = Depends(require_user),
 ) -> dict[str, object]:
-    # No database and no persistent disk storage — the audio only exists for the
-    # duration of this request, in a temp file, then the client keeps the results.
+    user_row = repository.get_user_by_username(str(user["username"]))
+    if not user_row:
+        raise HTTPException(status_code=401, detail="Unknown user")
+
     name = original_name or file.filename or "voice-note"
-    metadata = {"country": country, "city": city, "place_name": place_name, "visit_date": visit_date}
-    suffix = Path(name).suffix or ".mp3"
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=422, detail="Uploaded file is empty")
 
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as handle:
-        handle.write(await file.read())
-        tmp_path = handle.name
+    audio_path = save_audio(int(user_row["id"]), name, content)
+    row = repository.create_recording(
+        user_id=int(user_row["id"]),
+        original_filename=name,
+        title=recording_title(name),
+        recorded_at=recorded_at or None,
+        audio_path=audio_path,
+    )
+    return _recording_summary(row)
 
+
+@app.post("/recordings/{recording_id}/convert")
+def convert_recording(recording_id: int, user: dict[str, object] = Depends(require_user)) -> dict[str, object]:
+    user_row = repository.get_user_by_username(str(user["username"]))
+    if not user_row:
+        raise HTTPException(status_code=401, detail="Unknown user")
+
+    row = repository.get_recording(recording_id, int(user_row["id"]))
+    if not row:
+        raise HTTPException(status_code=404, detail="Recording not found")
+
+    repository.update_recording_status(recording_id, "processing")
     try:
-        raw_text = transcribe_audio(tmp_path, name, metadata)
+        segments = transcribe_audio_segments(row["audio_path"])
+        transcript = format_transcript(row["title"], row["recorded_at"], segments)
     except Exception as exc:
+        repository.update_recording_status(recording_id, "failed", error=str(exc))
         raise HTTPException(status_code=422, detail=f"Transcription failed: {exc}") from exc
-    finally:
-        Path(tmp_path).unlink(missing_ok=True)
 
-    location = display_location(metadata)
-    cleaned_text = clean_transcript(raw_text)
-    blog_draft = create_blog_draft(cleaned_text, blog_title, location)
-    chapter_draft = create_chapter_draft(cleaned_text, chapter_title, location)
-    return {
-        "raw_text": raw_text,
-        "cleaned_text": cleaned_text,
-        "blog_draft_text": blog_draft,
-        "chapter_draft_text": chapter_draft,
-        "location": location,
-    }
+    transcript_path = save_transcript(int(user_row["id"]), recording_id, transcript)
+    updated = repository.update_recording_status(recording_id, "completed", transcript_path=transcript_path)
+    return {**_recording_summary(updated), "transcript": transcript}
 
 
-@app.post("/summaries")
-def create_summary(request: SummaryRequest, user: dict[str, object] = Depends(require_user)) -> dict[str, object]:
-    sections = [dict(section) for section in request.sections]
-    for section in sections:
-        section.setdefault("location", display_location(section))
-    text = summarize_sections(sections, request.summary_type)
-    return {"text": text}
+@app.get("/recordings/{recording_id}")
+def get_recording_detail(recording_id: int, user: dict[str, object] = Depends(require_user)) -> dict[str, object]:
+    user_row = repository.get_user_by_username(str(user["username"]))
+    if not user_row:
+        raise HTTPException(status_code=401, detail="Unknown user")
 
+    row = repository.get_recording(recording_id, int(user_row["id"]))
+    if not row:
+        raise HTTPException(status_code=404, detail="Recording not found")
 
-@app.post("/exports")
-def export_batch(request: ExportRequest, user: dict[str, object] = Depends(require_user)) -> dict[str, object]:
-    sections = [dict(section) for section in request.sections]
-    if not sections:
-        raise HTTPException(status_code=404, detail="No sections to export")
-    for section in sections:
-        section.setdefault("location", display_location(section))
+    transcript = read_transcript(row["transcript_path"]) if row["transcript_path"] else ""
+    return {**_recording_summary(row), "transcript": transcript}
 
-    files = {
-        "metadata.json": build_metadata_json(sections),
-        "raw_transcript.md": build_markdown("Raw Travel Voice Transcript", sections, "raw_text"),
-        "cleaned_transcript.md": build_markdown("Cleaned Travel Transcript", sections, "cleaned_text"),
-        "blog_drafts.md": build_markdown("Travel Blog Drafts", sections, "blog_draft_text"),
-        "chapter_drafts.md": build_markdown("Travel Book Chapter Drafts", sections, "chapter_draft_text"),
-        "printable.html": build_printable_html(request.title, sections, request.include_raw),
-    }
-    return {"files": files}
