@@ -1,10 +1,15 @@
-# BookWriting Travel Studio
+# Travel Voice Studio
 
-BookWriting Travel Studio is a local-first web application for turning travel voice notes into raw transcripts, cleaned transcripts, blog drafts, chapter drafts, summaries, and printable manuscript output.
+Travel Voice Studio turns travel voice recordings into text. Log in, upload a
+recording, click "Convert to Text", and review the transcript — formatted with
+the recording title, recorded date/time, and `(m:ss)` timestamped paragraphs.
 
-**No database.** Nothing is persisted on the server: uploads are transcribed in memory/temp storage and the results are returned directly to the browser, which holds all trip/section state for the session. Login uses static credentials from `.env` (no user table). Use **Export** to download the manuscript files before closing the tab.
-
-Transcription runs locally using [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (no API key needed). The Whisper `small` model (~250 MB) is downloaded automatically on first use for better accuracy on longer recordings.
+Transcription runs locally using [faster-whisper](https://github.com/SYSTRAN/faster-whisper)
+(no API key or cost). Recording/user metadata is stored in Supabase Postgres
+(`BW_users`, `BW_recordings` — see [supabase_schema.sql](supabase_schema.sql)).
+Audio files and transcript text are stored on disk, never in the database.
+Until `backend/.env` has a real `SUPABASE_DB_PASSWORD`, the app falls back to
+a local JSON store so it still works end-to-end without Supabase configured.
 
 ## Quick Start (Windows)
 
@@ -21,6 +26,10 @@ This will:
 - Pre-download the Whisper `small` model
 - Install frontend Node.js dependencies
 
+Also install [ffmpeg](https://ffmpeg.org/) and make sure it's on `PATH` —
+faster-whisper uses it to decode audio correctly; without it, some recordings
+(especially from phone voice-recorder apps) can get truncated.
+
 Then start both servers (two terminals):
 
 ```powershell
@@ -30,7 +39,6 @@ python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 # Terminal 2 — frontend
 cd frontend
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 npm run dev
 ```
 
@@ -38,30 +46,34 @@ Open **http://127.0.0.1:5175** and log in with `admin` / `admin123`.
 
 ## Workflow
 
-1. Log in (static credentials from `backend/.env`).
-2. Set up a trip (kept in the browser only).
-3. Upload one or more audio files.
-4. Reorder files by route order and add country, city, place, date, blog title, and chapter title metadata.
-5. Process the batch (transcription runs locally via Whisper, one file at a time).
-6. Review raw transcript, cleaned transcript, blog draft, and chapter draft — edits live in the browser only.
-7. Generate a travel summary.
-8. Export and download the manuscript files (metadata, transcripts, drafts, printable HTML) — nothing is saved server-side, so download before closing the tab.
+1. Log in.
+2. Upload a voice recording — the Upload button disables once uploaded.
+3. Click "Convert to Text" — it shows a processing state until done.
+4. Review the formatted transcript, or pick any past recording from the list.
 
-## Deployment (Vercel)
+## Deploy Frontend to Vercel
 
-`vercel.json` and `api/index.py` at the repo root wire up a combined deployment: the frontend builds as a static site and `/api/*` routes to the FastAPI backend as a Python serverless function. Set `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `APP_SECRET_KEY`, `TRANSCRIPTION_PROVIDER`, and `WHISPER_MODEL` as Vercel environment variables.
+This repository keeps the Vite app in `frontend/`, so the root `vercel.json` tells Vercel to install and build from that folder:
 
-**Caveat:** `faster-whisper` (plus its `ctranslate2`/model-weight footprint) is heavy for serverless — it can exceed Vercel's function size limits and its execution-time limits on longer recordings. If deployment fails or times out, host the backend separately (Render, Fly.io, Railway, a VM) and deploy only the frontend to Vercel, or swap in a hosted speech-to-text API in `transcription/provider.py`.
+```text
+npm ci --prefix frontend
+npm --prefix frontend run build
+```
+
+Vercel publishes `frontend/dist`.
+
+For local development, the frontend calls `/api` and Vite proxies requests to the backend on `127.0.0.1:8000`. For a deployed Vercel frontend, set this environment variable to the deployed backend URL:
+
+```text
+VITE_API_BASE_URL=https://your-backend.example.com
+```
+
+**Note:** the FastAPI backend uses `faster-whisper`, which needs a persistent process and isn't a good fit for Vercel serverless functions (package size/timeout limits, and no persistent disk for uploaded audio). Deploy the backend separately (e.g. Render, Railway, Fly.io, or your own VM) and point `VITE_API_BASE_URL` at it.
 
 ## Validation
 
-The app has been tested with:
-
-## Validation
-
-The app has been tested with:
-
-- Backend unit tests: `4 passed`.
+- Backend unit tests: `7 passed`.
 - Frontend production build: successful.
 - Backend health check: `{"status":"healthy"}`.
-- End-to-end sample MP3 flow: login, upload, metadata update, process, summarize, and export succeeded.
+- End-to-end flow verified: login, upload, convert, full-length transcript display.
+

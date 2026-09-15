@@ -16,7 +16,7 @@ type Recording = {
 
 type UploadStage = 'idle' | 'uploading' | 'ready-to-convert' | 'converting';
 
-const apiBase = '/api';
+const apiBase = (import.meta.env.VITE_API_BASE_URL ?? '/api').replace(/\/$/, '');
 
 function formatDateTime(iso: string | null): string {
   if (!iso) return '';
